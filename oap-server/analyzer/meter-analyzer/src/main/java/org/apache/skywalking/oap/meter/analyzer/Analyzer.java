@@ -18,10 +18,10 @@
 
 package org.apache.skywalking.oap.meter.analyzer;
 
-import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableMap;
 import io.vavr.Tuple;
 import io.vavr.Tuple2;
+import java.util.List;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.ToString;
@@ -79,6 +79,8 @@ public class Analyzer {
 
     private static final String FUNCTION_NAME_TEMP = "%s%s";
 
+    private List<String> samples;
+
     private final String metricName;
 
     private final Expression expression;
@@ -95,7 +97,15 @@ public class Analyzer {
      * @param sampleFamilies input samples.
      */
     public void analyse(final ImmutableMap<String, SampleFamily> sampleFamilies) {
-        Result r = expression.run(sampleFamilies);
+        ImmutableMap<String, SampleFamily> input = samples.stream().map(s -> Tuple.of(s, sampleFamilies.get(s)))
+            .filter(t -> t._2 != null).collect(ImmutableMap.toImmutableMap(t -> t._1, t -> t._2));
+        if (input.size() < 1) {
+            if (log.isDebugEnabled()) {
+                log.debug("{} is ignored due to the lack of {}", expression, samples);
+            }
+            return;
+        }
+        Result r = expression.run(input);
         if (!r.isSuccess()) {
             return;
         }
@@ -145,7 +155,6 @@ public class Analyzer {
                           send(v, time);
                       });
                 break;
-
         }
     }
 
@@ -183,6 +192,7 @@ public class Analyzer {
     }
 
     private void init(final ExpressionParsingContext ctx) {
+        this.samples = ctx.getSamples();
         if (ctx.isHistogram()) {
             if (ctx.getPercentiles() != null && ctx.getPercentiles().length > 0) {
                 metricType = MetricType.histogramPercentile;
@@ -197,12 +207,12 @@ public class Analyzer {
                 metricType = MetricType.labeled;
             }
         }
-        Preconditions.checkState(createMetric(ctx.getScopeType(), metricType.literal, ctx.getDownsampling()));
+        createMetric(ctx.getScopeType(), metricType.literal, ctx.getDownsampling());
     }
 
-    private boolean createMetric(final ScopeType scopeType, final String dataType, final DownsamplingType downsamplingType) {
+    private void createMetric(final ScopeType scopeType, final String dataType, final DownsamplingType downsamplingType) {
         String functionName = String.format(FUNCTION_NAME_TEMP, downsamplingType.toString().toLowerCase(), Strings.capitalize(dataType));
-        return meterSystem.create(metricName, functionName, scopeType);
+        meterSystem.create(metricName, functionName, scopeType);
     }
 
     private void send(final AcceptableValue<?> v, final long time) {

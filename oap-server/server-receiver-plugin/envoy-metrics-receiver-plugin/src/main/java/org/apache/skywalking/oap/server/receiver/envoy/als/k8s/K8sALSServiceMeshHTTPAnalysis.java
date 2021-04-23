@@ -35,7 +35,10 @@ import org.apache.skywalking.oap.server.receiver.envoy.als.AbstractALSAnalyzer;
 import org.apache.skywalking.oap.server.receiver.envoy.als.Role;
 import org.apache.skywalking.oap.server.receiver.envoy.als.ServiceMetaInfo;
 
+import static org.apache.skywalking.apm.util.StringUtil.isBlank;
+import static org.apache.skywalking.oap.server.library.util.CollectionUtils.isNotEmpty;
 import static org.apache.skywalking.oap.server.receiver.envoy.als.LogEntry2MetricsAdapter.NON_TLS;
+import static org.apache.skywalking.oap.server.receiver.envoy.als.k8s.Addresses.isValid;
 
 /**
  * Analysis log based on ingress and mesh scenarios.
@@ -57,7 +60,15 @@ public class K8sALSServiceMeshHTTPAnalysis extends AbstractALSAnalyzer {
     }
 
     @Override
-    public List<ServiceMeshMetric.Builder> analysis(StreamAccessLogsMessage.Identifier identifier, HTTPAccessLogEntry entry, Role role) {
+    public List<ServiceMeshMetric.Builder> analysis(
+        final List<ServiceMeshMetric.Builder> result,
+        final StreamAccessLogsMessage.Identifier identifier,
+        final HTTPAccessLogEntry entry,
+        final Role role
+    ) {
+        if (isNotEmpty(result)) {
+            return result;
+        }
         if (serviceRegistry.isEmpty()) {
             return Collections.emptyList();
         }
@@ -72,12 +83,12 @@ public class K8sALSServiceMeshHTTPAnalysis extends AbstractALSAnalyzer {
     }
 
     protected List<ServiceMeshMetric.Builder> analyzeSideCar(final HTTPAccessLogEntry entry) {
-        final AccessLogCommon properties = entry.getCommonProperties();
-        if (properties == null) {
+        if (!entry.hasCommonProperties()) {
             return Collections.emptyList();
         }
+        final AccessLogCommon properties = entry.getCommonProperties();
         final String cluster = properties.getUpstreamCluster();
-        if (cluster == null) {
+        if (isBlank(cluster)) {
             return Collections.emptyList();
         }
 
@@ -89,6 +100,9 @@ public class K8sALSServiceMeshHTTPAnalysis extends AbstractALSAnalyzer {
                 : properties.getDownstreamRemoteAddress();
         final ServiceMetaInfo downstreamService = find(downstreamRemoteAddress.getSocketAddress().getAddress());
         final Address downstreamLocalAddress = properties.getDownstreamLocalAddress();
+        if (!isValid(downstreamRemoteAddress) || !isValid(downstreamLocalAddress)) {
+            return Collections.emptyList();
+        }
         final ServiceMetaInfo localService = find(downstreamLocalAddress.getSocketAddress().getAddress());
 
         if (cluster.startsWith("inbound|")) {
@@ -110,6 +124,9 @@ public class K8sALSServiceMeshHTTPAnalysis extends AbstractALSAnalyzer {
         } else if (cluster.startsWith("outbound|")) {
             // sidecar(client side) -> sidecar
             final Address upstreamRemoteAddress = properties.getUpstreamRemoteAddress();
+            if (!isValid(upstreamRemoteAddress)) {
+                return sources;
+            }
             final ServiceMetaInfo destService = find(upstreamRemoteAddress.getSocketAddress().getAddress());
 
             final ServiceMeshMetric.Builder metric = newAdapter(entry, downstreamService, destService).adaptToUpstreamMetrics();
@@ -122,15 +139,15 @@ public class K8sALSServiceMeshHTTPAnalysis extends AbstractALSAnalyzer {
     }
 
     protected List<ServiceMeshMetric.Builder> analyzeProxy(final HTTPAccessLogEntry entry) {
-        final AccessLogCommon properties = entry.getCommonProperties();
-        if (properties == null) {
+        if (!entry.hasCommonProperties()) {
             return Collections.emptyList();
         }
+        final AccessLogCommon properties = entry.getCommonProperties();
         final Address downstreamLocalAddress = properties.getDownstreamLocalAddress();
         final Address downstreamRemoteAddress = properties.hasDownstreamDirectRemoteAddress() ?
             properties.getDownstreamDirectRemoteAddress() : properties.getDownstreamRemoteAddress();
         final Address upstreamRemoteAddress = properties.getUpstreamRemoteAddress();
-        if (downstreamLocalAddress == null || downstreamRemoteAddress == null || upstreamRemoteAddress == null) {
+        if (!isValid(downstreamLocalAddress) || !isValid(downstreamRemoteAddress) || !isValid(upstreamRemoteAddress)) {
             return Collections.emptyList();
         }
 

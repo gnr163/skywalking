@@ -16,6 +16,7 @@
 - elastic-job-3.x
 - elasticsearch-5.x
 - elasticsearch-6.x
+- elasticsearch-7.x
 - feign-default-http-9.x
 - feign-pathvar-9.x
 - finagle
@@ -23,7 +24,7 @@
 - grpc-1.x
 - gson-2.8.x
 - h2-1.x
-- hbase-1.x
+- hbase-1.x/2.x
 - httpasyncclient-4.x
 - httpclient-3.x
 - httpclient-4.x
@@ -113,3 +114,4 @@
 - mssql-jtds-1.x
 - mssql-jdbc
 - apache-cxf-3.x
+- jsonrpc4j
